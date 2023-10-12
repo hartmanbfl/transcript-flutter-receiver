@@ -1,8 +1,72 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 
 void main() {
-  runApp(const MyApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => LanguageModel(),
+      child: MyApp(),
+    ),
+//    const MyApp());
+  );
+}
+
+class LanguageModel extends ChangeNotifier {
+  String _selectedLanguage = 'English';
+
+  String get selectedLanguage => _selectedLanguage;
+
+  void setSelectedLanguage(String language) {
+    print("Language is now: " + language);
+    _selectedLanguage = language;
+    notifyListeners();
+  }
+}
+
+class LanguageSelector extends StatefulWidget {
+  @override
+  _LanguageSelectorState createState() => _LanguageSelectorState();
+}
+
+class _LanguageSelectorState extends State<LanguageSelector> {
+  String _selectedLanguage = 'English';
+
+  final List<String> _languages = [
+    'English',
+    'Español',
+    'Français',
+    'Deutsch',
+    '中文',
+    '日本語',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final languageModel = Provider.of<LanguageModel>(context);
+
+    return DropdownButton<String>(
+      value: languageModel.selectedLanguage,
+      onChanged: (String? newValue) {
+        if (newValue != null) {
+          languageModel.setSelectedLanguage(newValue);
+        }
+      },
+      items: [
+        'English',
+        'Spanish',
+        'French',
+        'German',
+        'Arabic',
+        'Ukranian',
+      ].map<DropdownMenuItem<String>>((String value) {
+        return DropdownMenuItem<String>(
+          value: value,
+          child: Text(value),
+        );
+      }).toList(),
+    );
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -58,17 +122,37 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   late IO.Socket socket;
   int _counter = 0;
+  late LanguageModel _languageModel;
+  bool socketInitialized = false;
 
   String myText = "Waiting for new text";
+  String myTranslatedText = "Waiting for translation";
+
+  late String dropdownValue = "";
+  static const Map<String, String> lang = {
+    "None": "",
+    "Arabic": "ar",
+    "English": "en",
+    "French": "fr",
+    "German": "de",
+  };
+
+  void _onLanguageChanged() {
+    String selectedLanguage = _languageModel.selectedLanguage;
+    print("Detected language change to " + selectedLanguage);
+  }
 
   @override
   void initState() {
     super.initState();
+    _languageModel = Provider.of<LanguageModel>(context, listen: false);
+    _languageModel.addListener(_onLanguageChanged);
   }
 
   @override
   void dispose() {
     socket.disconnect();
+    _languageModel.removeListener(_onLanguageChanged);
     super.dispose();
   }
 
@@ -84,9 +168,25 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
+  void updateTranslatedText(newText) {
+    setState(() {
+      myTranslatedText = '$myTranslatedText ' + newText;
+    });
+  }
+
+  void resetTranslatedText() {
+    setState(() {
+      myTranslatedText = '';
+    });
+  }
+
   void _startListening() {
     resetText();
-    _initSocket();
+    resetTranslatedText();
+    if (!socketInitialized) {
+      _initSocket();
+      socketInitialized = true;
+    }
 
     setState(() {});
   }
@@ -97,7 +197,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Future<void> _initSocket() async {
     socket =
-        IO.io('https://b1e3-109-164-195-26.ngrok-free.app', <String, dynamic>{
+        IO.io('https://live-pegasus-first.ngrok-free.app', <String, dynamic>{
       'path': '/socket.io',
       'transports': ['websocket'],
       'autoconnect': false,
@@ -110,18 +210,29 @@ class _MyHomePageState extends State<MyHomePage> {
       print('Received transcript: ' + transcript);
       updateText(transcript);
     });
-  }
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+    socket.on('translation', (translation) {
+      print('Received translation: ' + translation);
+      updateTranslatedText(translation);
     });
   }
+
+  void trans() {
+    setState(() {
+      print("Selected language: " + dropdownValue);
+      socket.emit("subscribe", dropdownValue);
+    });
+  }
+
+  //void _incrementCounter() {
+  //  setState(() {
+  //    // This call to setState tells the Flutter framework that something has
+  //    // changed in this State, which causes it to rerun the build method below
+  //    // so that the display can reflect the updated values. If we changed
+  //    // _counter without calling setState(), then the build method would not be
+  //    // called again, and so nothing would appear to happen.
+  //    _counter++;
+  //  });
+  //}
 
   @override
   Widget build(BuildContext context) {
@@ -180,6 +291,11 @@ class _MyHomePageState extends State<MyHomePage> {
 //        child: const Icon(Icons.add),
 //      ), // This trailing comma makes auto-formatting nicer for build methods.
 //    );
+
+//    return ChangeNotifierProvider(
+//        create: (_) => LanguageModel(),
+//        child:
+//            Consumer<LanguageModel>(builder: (context, languageModel, child) {
     return MaterialApp(
       home: Scaffold(
         appBar: AppBar(
@@ -188,6 +304,45 @@ class _MyHomePageState extends State<MyHomePage> {
         body: Column(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
+//            LanguageSelector(),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                Text("Select Language here =>"),
+                DropdownButton<String>(
+                  value: dropdownValue,
+                  icon: Icon(Icons.arrow_downward),
+                  iconSize: 24,
+                  elevation: 16,
+                  style: TextStyle(color: Colors.deepPurple),
+                  underline: Container(
+                    height: 2,
+                    color: Colors.deepPurpleAccent,
+                  ),
+                  onChanged: (String? newValue) {
+                    setState(() {
+                      if (newValue != null) {
+                        dropdownValue = newValue;
+                        trans();
+                      }
+                    });
+                  },
+                  items: lang
+                      .map((string, value) {
+                        return MapEntry(
+                          string,
+                          DropdownMenuItem<String>(
+                            value: value,
+                            child: Text(string),
+                          ),
+                        );
+                      })
+                      .values
+                      .toList(),
+                ),
+              ],
+            ),
             Row(
               children: <Widget>[
                 Expanded(
@@ -206,14 +361,14 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
               ],
             ),
-            const Row(
+            Row(
               children: <Widget>[
                 Expanded(
                   flex: 3,
                   child: SizedBox(
                     width: 150,
                     child: Text(
-                      'Translated text TBD',
+                      myTranslatedText,
                       textAlign: TextAlign.center,
                       overflow: TextOverflow.ellipsis,
                       maxLines: 50,
@@ -251,6 +406,7 @@ class _MyHomePageState extends State<MyHomePage> {
                           MaterialStateProperty.all<Color>(Colors.white),
                     ),
                     onPressed: () {
+                      updateText('');
                       _stopListening();
                     },
                     child: const Text('Stop', style: TextStyle(fontSize: 30)),
@@ -262,5 +418,6 @@ class _MyHomePageState extends State<MyHomePage> {
         ),
       ),
     );
+//        }));
   }
 }
